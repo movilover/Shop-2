@@ -256,6 +256,10 @@ window.$db={
   listenProducts:cb=>arr('products',cb),
   listenCategories:cb=>arr('categories',cb),
   listenSections:cb=>arr('sections',cb),
+  listenIntlCats:cb=>arr('intlCategories',cb),
+  saveIntlCat:async d=>{const r=push(ref(db,'intlCategories'));await set(r,d);return r.key},
+  updateIntlCat:async(k,d)=>update(ref(db,'intlCategories/'+k),d),
+  deleteIntlCat:async k=>remove(ref(db,'intlCategories/'+k)),
   listenSettings:cb=>onValue(ref(db,'settings'),s=>cb(s.val()||{}),e=>console.warn('settings',e.message)),
   uploadImage:(file,path,onProgress)=>{const task=uploadBytesResumable(sRef(storage,path),file);return new Promise((res,rej)=>{task.on('state_changed',s=>{onProgress&&onProgress(Math.round(s.bytesTransferred/s.totalBytes*100))},rej,async()=>res(await getDownloadURL(task.snapshot.ref)))})}
 };
@@ -314,19 +318,25 @@ window.$db={
       <button @click="logout()" class="btn-ghost flex-shrink-0"><i class="fa-solid fa-right-from-bracket"></i>লগআউট</button>
     </div>
     <div class="max-w-6xl mx-auto px-4 pb-3 pill-scroll">
-      <button type="button" class="hub-tab" :class="activeTab==='upload'?'on':''" @click="activeTab='upload'"><i class="fa-solid fa-cloud-arrow-up"></i><span x-text="up.editKey?'পণ্য সম্পাদনা':'নতুন পণ্য আপলোড'"></span></button>
+      <button type="button" class="hub-tab" :class="activeTab==='upload'?'on':''" @click="goUpload()"><i class="fa-solid fa-cloud-arrow-up"></i><span x-text="up.editKey?'পণ্য সম্পাদনা':'নতুন পণ্য আপলোড'"></span></button>
       <button type="button" class="hub-tab" :class="activeTab==='products'?'on':''" @click="activeTab='products'"><i class="fa-solid fa-boxes-stacked"></i>আমার পণ্য<span class="bd" x-show="myProds.length>0" x-text="myProds.length"></span></button>
+      <button type="button" class="hub-tab" :class="activeTab==='intl'?'on':''" @click="activeTab='intl';if(intlView==='form'&&!up.intl)intlView='cats'">🌍 ইন্টারন্যাশনাল<span class="bd" x-show="myIntlProds.length>0" x-text="myIntlProds.length"></span></button>
+    </div>
+    <div x-show="activeTab==='intl'" x-cloak class="max-w-6xl mx-auto px-4 pb-3 pill-scroll">
+      <button type="button" class="catchip" :class="intlView==='cats'?'on':''" @click="intlView='cats'"><i class="fa-solid fa-layer-group"></i>ক্যাটাগরি ও সাব-ক্যাটাগরি</button>
+      <button type="button" class="catchip" :class="intlView==='form'?'on':''" @click="goIntlForm()"><i class="fa-solid fa-plus"></i>নতুন প্রোডাক্ট</button>
+      <button type="button" class="catchip" :class="intlView==='list'?'on':''" @click="intlView='list'"><i class="fa-solid fa-boxes-stacked"></i>আমার ইন্টারন্যাশনাল প্রোডাক্ট</button>
     </div>
   </header>
 
   <main class="max-w-6xl mx-auto px-4 py-6 pb-24">
-  <div x-show="activeTab==='upload'" class="animate-fade-in">
+  <div x-show="showForm" class="animate-fade-in">
     <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
       <div>
-        <p class="font-bold text-base" style="color:var(--fg)" x-text="up.editKey?'✏️ পণ্য সম্পাদনা':'📦 নতুন পণ্য আপলোড'"></p><p class="text-xs font-mono mt-1" style="color:var(--accent)" x-text="'পণ্য আইডি: #'+(up.editKey?(fbProducts.find(p=>p.fbKey===up.editKey)?.productId||'—'):nextProductId)+' (স্বয়ংক্রিয়)'"></p>
+        <p class="font-bold text-base" style="color:var(--fg)" x-text="up.editKey?'✏️ পণ্য সম্পাদনা':(up.intl?'🌍 নতুন ইন্টারন্যাশনাল প্রোডাক্ট':'📦 নতুন পণ্য আপলোড')"></p><p class="text-xs font-mono mt-1" style="color:var(--accent)" x-text="'পণ্য আইডি: #'+(up.editKey?(fbProducts.find(p=>p.fbKey===up.editKey)?.productId||'—'):nextProductId)+' (স্বয়ংক্রিয়)'"></p>
         <p class="text-xs mt-1" style="color:var(--fg3)">সকল তথ্য পূরণ করুন এবং ছবি যোগ করুন</p>
       </div>
-      <button x-show="up.editKey" @click="resetUp()" class="btn-ghost"><i class="fa-solid fa-rotate-left"></i>নতুন পণ্য</button>
+      <button x-show="up.editKey" @click="up.intl?goIntlForm():resetUp()" class="btn-ghost"><i class="fa-solid fa-rotate-left"></i>নতুন পণ্য</button>
     </div>
 
     <div class="grid lg:grid-cols-2 gap-6 items-start">
@@ -561,7 +571,25 @@ window.$db={
             <div><label class="dd-label">আগের মূল্য / MRP (৳)</label><input class="dd-input" type="number" x-model.number="up.oldPrice" placeholder="0" min="0"/></div>
           </div>
 
-          <div class="rounded-2xl p-4 space-y-4" style="background:var(--bg2);border:1px solid var(--border)">
+          <div x-show="up.intl" class="rounded-2xl p-4 space-y-4" style="background:#EFF6FF;border:1px solid #BFDBFE">
+            <div>
+              <label class="dd-label">১. ইন্টারন্যাশনাল ক্যাটাগরি বাছুন *</label>
+              <div class="flex flex-wrap gap-2 mt-1.5">
+                <template x-for="c in intlTop" :key="c.fbKey"><button type="button" class="catchip" :class="intlTopSel===c.fbKey?'on':''" @click="up.intlCatKey=c.fbKey"><span x-text="c.emoji||'🌍'"></span><span x-text="c.name"></span></button></template>
+              </div>
+              <p x-show="!intlTop.length" class="text-xs mt-2" style="color:var(--fg3)">এখনও কোনো ক্যাটাগরি নেই। <button type="button" class="font-bold underline" style="color:var(--accent)" @click="activeTab='intl';intlView='cats'">আগে ক্যাটাগরি যোগ করুন</button></p>
+            </div>
+            <div x-show="intlSubsOf(intlTopSel).length">
+              <label class="dd-label">২. সাব-ক্যাটাগরি (ঐচ্ছিক)</label>
+              <div class="flex flex-wrap gap-2 mt-1.5">
+                <button type="button" class="catchip" :class="up.intlCatKey===intlTopSel?'on':''" @click="up.intlCatKey=intlTopSel">শুধু মূল ক্যাটাগরি</button>
+                <template x-for="s in intlSubsOf(intlTopSel)" :key="s.fbKey"><button type="button" class="catchip" :class="up.intlCatKey===s.fbKey?'on':''" @click="up.intlCatKey=s.fbKey"><span x-text="s.emoji||'•'"></span><span x-text="s.name"></span></button></template>
+              </div>
+            </div>
+            <p x-show="up.intlCatKey" class="text-xs font-bold" style="color:var(--accent)"><i class="fa-solid fa-check mr-1"></i>নির্বাচিত: <span x-text="intlLabel"></span></p>
+          </div>
+
+          <div x-show="!up.intl" class="rounded-2xl p-4 space-y-4" style="background:var(--bg2);border:1px solid var(--border)">
             <div x-show="allSections.length">
               <label class="dd-label">১. সেকশন বাছুন (ঐচ্ছিক)</label>
               <div class="flex flex-wrap gap-2 mt-1.5">
@@ -590,7 +618,7 @@ window.$db={
             </div>
           </div>
 
-          <div>
+          <div x-show="!up.intl">
             <label class="dd-label">পণ্যের ধরন (লিঙ্গ ভিত্তিক)</label>
             <div class="flex gap-2 flex-wrap mt-1.5">
               <button @click="up.gender='men'" type="button" :class="up.gender==='men'?'gender-pill active-men':'gender-pill'">👔 পুরুষ</button>
@@ -620,7 +648,14 @@ window.$db={
 
           <div><label class="dd-label">পণ্যের বিবরণ / Description</label><textarea class="dd-input resize-none" rows="4" x-model="up.desc" placeholder="পণ্যের বিস্তারিত বিবরণ লিখুন..."></textarea></div>
 
-          <div class="rounded-xl p-3.5" style="background:var(--accentL);border:1px dashed var(--accent)">
+          <div x-show="up.intl" class="grid grid-cols-2 gap-3">
+            <div><label class="dd-label">স্টক</label><input class="dd-input" type="number" min="0" x-model.number="up.stock"/></div>
+            <div><label class="dd-label">শিপিং খরচ (৳)</label><input class="dd-input" type="number" min="0" x-model.number="up.shipCost"/></div>
+            <div><label class="dd-label">কালার (কমা দিয়ে)</label><input class="dd-input" x-model="up.colors" placeholder="Red, Black"/></div>
+            <div><label class="dd-label">ট্যাগ (কমা দিয়ে)</label><input class="dd-input" x-model="up.tags" placeholder="winter, jacket"/></div>
+          </div>
+
+          <div x-show="!up.intl" class="rounded-xl p-3.5" style="background:var(--accentL);border:1px dashed var(--accent)">
             <p class="text-xs font-bold mb-3" style="color:var(--accent)"><i class="fa-solid fa-tag mr-1.5"></i>প্রোমো কোড সেটআপ</p>
             <div class="grid grid-cols-2 gap-3">
               <div><label class="dd-label">প্রোমো কোড</label><input class="dd-input" x-model="up.promoCode" placeholder="SAVE10"/></div>
@@ -659,7 +694,7 @@ window.$db={
             </template>
           </div>
 
-          <div class="rounded-xl p-3.5" style="background:#EFF6FF;border:1px dashed #1D4ED8">
+          <div x-show="!up.intl" class="rounded-xl p-3.5" style="background:#EFF6FF;border:1px dashed #1D4ED8">
             <label class="flex items-center gap-3 cursor-pointer mb-3">
               <span class="tog"><input type="checkbox" x-model="up.installmentEnabled"/><span class="tog-sl"></span></span>
               <span>
@@ -688,7 +723,7 @@ window.$db={
 
           <div class="rounded-xl p-3.5 space-y-3" style="background:var(--bg2);border:1px solid var(--border)">
             <p class="text-xs font-bold" style="color:var(--fg3)">অতিরিক্ত অপশন</p>
-            <label class="flex items-center gap-3 cursor-pointer">
+            <label x-show="!up.intl" class="flex items-center gap-3 cursor-pointer">
               <span class="tog"><input type="checkbox" x-model="up.isEid"/><span class="tog-sl"></span></span>
               <span>
                 <p class="text-sm font-semibold" style="color:var(--fg)">🌙 ঈদ কালেকশনে যোগ করুন</p>
@@ -781,6 +816,67 @@ window.$db={
       </div>
     </div>
   </div>
+    <div x-show="activeTab==='intl'&&intlView==='cats'" x-cloak class="animate-fade-in space-y-4">
+      <div class="dd-card p-4">
+        <p class="font-bold text-sm mb-1" x-text="cf.editKey?'✏️ ক্যাটাগরি সম্পাদনা':'🌍 ইন্টারন্যাশনাল ক্যাটাগরি / সাব-ক্যাটাগরি যোগ করুন'"></p>
+        <p class="text-xs mb-3" style="color:var(--fg3)">"মূল ক্যাটাগরি" বেছে নিলে এটি সাব-ক্যাটাগরি হবে (যেমন: ছেলেদের পণ্য → প্যান্ট, শার্ট)। ফাঁকা রাখলে এটি মূল ক্যাটাগরি।</p>
+        <div class="grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
+          <div class="col-span-2"><label class="dd-label">নাম *</label><input class="dd-input" x-model="cf.name" placeholder="যেমন: ছেলেদের পণ্য"/></div>
+          <div class="col-span-2"><label class="dd-label">মূল ক্যাটাগরি (সাব হলে)</label>
+            <select class="dd-input" x-model="cf.parent"><option value="">— মূল ক্যাটাগরি —</option><template x-for="c in intlCats.filter(x=>!x.parent&&x.fbKey!==cf.editKey)" :key="c.fbKey"><option :value="c.fbKey" x-text="(c.emoji||'')+' '+c.name"></option></template></select></div>
+          <div><label class="dd-label">ইমোজি</label><input class="dd-input" x-model="cf.emoji" placeholder="👕"/></div>
+          <div><label class="dd-label">ক্রম</label><input class="dd-input" type="number" x-model.number="cf.order"/></div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2 mt-3">
+          <div class="w-14 h-14 rounded-xl overflow-hidden flex items-center justify-center flex-shrink-0" style="background:var(--bg2)"><img x-show="cf.img" :src="cf.img" class="w-full h-full object-cover" alt=""/><i x-show="!cf.img" class="fa-solid fa-image" style="color:var(--fg3)"></i></div>
+          <label class="btn-ghost text-xs cursor-pointer"><i class="fa-solid fa-upload"></i> গ্যালারি থেকে ছবি<input type="file" accept="image/*" class="hidden" @change="uploadCatImage($event)"/></label>
+          <input class="dd-input flex-1" style="min-width:180px" x-model="cf.img" placeholder="অথবা ছবির লিংক"/>
+        </div>
+        <div x-show="cf.pct>0&&cf.pct<100" class="mt-2"><div class="prog-bar"><div class="prog-bar-fill" :style="'width:'+cf.pct+'%'"></div></div></div>
+        <div class="flex gap-2 mt-3">
+          <button class="btn-primary text-xs" @click="catSave()"><i class="fa-solid fa-floppy-disk"></i> <span x-text="cf.editKey?'আপডেট করুন':'যোগ করুন'"></span></button>
+          <button x-show="cf.editKey" class="btn-ghost text-xs" @click="catReset()">বাতিল</button>
+        </div>
+      </div>
+      <template x-for="c in intlRoots" :key="c.fbKey">
+        <div class="dd-card p-3">
+          <div class="flex items-center gap-3">
+            <div class="w-12 h-12 rounded-xl overflow-hidden flex items-center justify-center text-2xl flex-shrink-0" style="background:var(--bg2)"><img x-show="c.img" :src="c.img" class="w-full h-full object-cover" alt=""/><span x-show="!c.img" x-text="c.emoji||'📦'"></span></div>
+            <div class="flex-1 min-w-0"><p class="text-sm font-bold truncate"><span x-text="c.name"></span> <span x-show="!ownCat(c)" class="text-xs font-semibold px-2 py-0.5 rounded-full" style="background:var(--bg2);color:var(--fg3)">অ্যাডমিন</span></p><p class="text-xs" style="color:var(--fg3)" x-text="intlSubsOf(c.fbKey).length+'টি সাব-ক্যাটাগরি · '+fbProducts.filter(p=>p.intl&&p.intlCat===c.name).length+'টি পণ্য'"></p></div>
+            <template x-if="ownCat(c)"><div class="flex items-center gap-2">
+              <label class="tog"><input type="checkbox" :checked="c.active!==false" @change="catToggle(c,$event.target.checked)"/><span class="tog-sl"></span></label>
+              <button class="btn-ghost text-xs" @click="catEdit(c)"><i class="fa-solid fa-pen"></i></button>
+              <button class="text-xs" style="color:#E11D48" @click="catDelete(c)"><i class="fa-solid fa-trash"></i></button>
+            </div></template>
+            <button class="btn-ghost text-xs" @click="catAddSub(c)"><i class="fa-solid fa-plus"></i> সাব</button>
+          </div>
+          <div class="flex flex-wrap gap-2 mt-3" x-show="intlSubsOf(c.fbKey).length">
+            <template x-for="s in intlSubsOf(c.fbKey)" :key="s.fbKey">
+              <div class="flex items-center gap-1.5 rounded-xl px-2 py-1.5 text-xs" style="background:var(--bg2)">
+                <img x-show="s.img" :src="s.img" class="w-6 h-6 rounded-md object-cover" alt=""/><span x-show="!s.img" x-text="s.emoji||'•'"></span>
+                <b x-text="s.name"></b><span style="color:var(--fg3)" x-text="'('+fbProducts.filter(p=>p.intl&&p.intlSub===s.name).length+')'"></span>
+                <template x-if="ownCat(s)"><span class="flex items-center gap-1.5"><button @click="catEdit(s)"><i class="fa-solid fa-pen" style="color:var(--fg3)"></i></button><button @click="catToggle(s,s.active===false)"><i class="fa-solid" :class="s.active===false?'fa-eye-slash':'fa-eye'" style="color:var(--fg3)"></i></button><button @click="catDelete(s)"><i class="fa-solid fa-xmark" style="color:#E11D48"></i></button></span></template>
+              </div>
+            </template>
+          </div>
+        </div>
+      </template>
+      <p class="text-xs" x-show="!intlCats.length" style="color:var(--fg3)">এখনও কোনো ইন্টারন্যাশনাল ক্যাটাগরি নেই। উপরে প্রথম ক্যাটাগরি যোগ করুন।</p>
+    </div>
+
+    <div x-show="activeTab==='intl'&&intlView==='list'" x-cloak class="animate-fade-in">
+      <div class="flex items-center justify-between mb-4 flex-wrap gap-2"><div><p class="font-bold text-base" style="color:var(--fg)">🌍 আমার ইন্টারন্যাশনাল প্রোডাক্ট</p><p class="text-xs" style="color:var(--fg3)" x-text="myIntlProds.length+' টি প্রোডাক্ট'"></p></div><button @click="goIntlForm()" class="btn-primary text-xs"><i class="fa-solid fa-plus"></i>নতুন প্রোডাক্ট</button></div>
+      <div class="dd-card overflow-x-auto"><table class="w-full text-sm" style="min-width:640px">
+        <thead><tr><th>ছবি</th><th>নাম</th><th>মূল্য</th><th>ক্যাটাগরি</th><th>স্ট্যাটাস</th><th>অ্যাকশন</th></tr></thead>
+        <tbody><template x-for="p in myIntlProds" :key="p.fbKey"><tr>
+          <td><img :src="p.img" class="w-12 h-12 rounded-lg object-cover" alt="" onerror="this.style.visibility='hidden'"/></td>
+          <td class="font-semibold" x-text="p.name"></td><td x-text="'৳'+Number(p.price||0).toLocaleString()"></td>
+          <td class="text-xs" x-text="p.intlCat+(p.intlSub?' › '+p.intlSub:'')"></td>
+          <td><span class="text-xs font-bold px-2 py-0.5 rounded-full" :style="p.active===false?'background:#FEE2E2;color:#B91C1C':'background:#DCFCE7;color:#15803D'" x-text="p.active===false?'বন্ধ':'চালু'"></span></td>
+          <td><div class="flex gap-2"><button class="btn-ghost text-xs" @click="editProduct(p)"><i class="fa-solid fa-pen"></i></button><button class="text-xs" style="color:#E11D48" @click="deleteProd(p.fbKey)"><i class="fa-solid fa-trash"></i></button></div></td>
+        </tr></template></tbody></table>
+        <p x-show="!myIntlProds.length" class="text-xs p-4" style="color:var(--fg3)">এখনও কোনো ইন্টারন্যাশনাল প্রোডাক্ট আপলোড করেননি।</p></div>
+    </div>
   </main>
 </div>
 
@@ -798,6 +894,7 @@ function Vendor(){return{
   activeTab:'upload',activeTheme:'light',saving:false,_started:false,
   fbProducts:[],fbCategories:[],fbSections:[],settings:{cloudinaryCloudName:'',cloudinaryUploadPreset:''},
   prodSearch:'',prodSectionF:'',prodCatF:'',catQ:'',
+  intlView:'cats',intlCats:[],cf:{name:'',emoji:'',img:'',order:99,parent:'',editKey:null,pct:0},
   toast:{show:false,msg:'',type:'success'},
   dupModal:{open:false,prod:null,why:''},
   up:{
@@ -812,7 +909,7 @@ function Vendor(){return{
     saving:false,saveErr:'',
     images:[],carIdx:0,
     mode:'A',dragA:false,dragB:false,dragC:false,urlInput:'',
-    imgbbKey:'',showKey:false,
+    intl:false,intlCatKey:'',colors:'',tags:'',stock:100,shipCost:0,imgbbKey:'',showKey:false,
     queue:[],qRunning:false,log:[],
   },
 
@@ -826,6 +923,7 @@ function Vendor(){return{
     window.$db.listenProducts(x=>this.fbProducts=x);
     window.$db.listenCategories(x=>this.fbCategories=x);
     window.$db.listenSections(x=>this.fbSections=x);
+    window.$db.listenIntlCats(x=>this.intlCats=x.sort((a,b)=>(a.order??99)-(b.order??99)));
     window.$db.listenSettings(s=>{if(s&&s.settings)Object.assign(this.settings,{cloudinaryCloudName:s.settings.cloudinaryCloudName||'',cloudinaryUploadPreset:s.settings.cloudinaryUploadPreset||''})});
   },
   async login(){
@@ -840,12 +938,46 @@ function Vendor(){return{
 
   get userEmail(){return this.user?this.user.email:''},
   get allSections(){return this.fbSections.filter(s=>s.active!==false).sort((a,b)=>(a.order??99)-(b.order??99))},
-  get myProds(){return this.fbProducts.filter(x=>x.uploadedBy===this.userEmail)},
+  get myProds(){return this.fbProducts.filter(x=>x.uploadedBy===this.userEmail&&!x.intl)},
   get filteredProds(){
     const q=this.prodSearch.toLowerCase();
     return this.myProds.slice().sort((a,b)=>(b.timestamp||0)-(a.timestamp||0)).filter(x=>(!q||(x.name||'').toLowerCase().includes(q))&&(!this.prodSectionF||x.section===this.prodSectionF||x.sectionId===this.prodSectionF)&&(!this.prodCatF||x.cat===this.prodCatF));
   },
   get pinnedKeys(){return[]},
+  get showForm(){return this.activeTab==='upload'||(this.activeTab==='intl'&&this.intlView==='form')},
+  get myIntlProds(){return this.fbProducts.filter(x=>x.uploadedBy===this.userEmail&&x.intl).sort((a,b)=>(b.timestamp||0)-(a.timestamp||0))},
+  get intlRoots(){return this.intlCats.filter(c=>!c.parent||!this.intlCats.some(y=>y.fbKey===c.parent))},
+  get intlTop(){return this.intlRoots.filter(c=>c.active!==false)},
+  get intlTopSel(){const c=this.intlCats.find(x=>x.fbKey===this.up.intlCatKey);return c?(c.parent||c.fbKey):''},
+  get intlLabel(){const k=this.intlPick();return k?(k.cat+(k.sub?' › '+k.sub:'')):''},
+  intlSubsOf(k){return k?this.intlCats.filter(c=>c.parent===k&&c.active!==false):[]},
+  intlPick(){const c=this.intlCats.find(x=>x.fbKey===this.up.intlCatKey);if(!c)return null;const t=c.parent&&this.intlCats.find(x=>x.fbKey===c.parent);return t?{cat:t.name,sub:c.name}:{cat:c.name,sub:''}},
+  ownCat(c){return c.createdBy===this.userEmail},
+  goUpload(){this.activeTab='upload';if(this.up.intl)this.resetUp()},
+  goIntlForm(){this.resetUp();this.up.intl=true;this.activeTab='intl';this.intlView='form';window.scrollTo(0,0)},
+  editProduct(p){this._editBase(p);if(p.intl){const c=this.intlCats.find(x=>x.name===(p.intlSub||p.intlCat)&&(p.intlSub?x.parent:!x.parent));Object.assign(this.up,{intl:true,intlCatKey:c?c.fbKey:'',colors:(p.colors||[]).join(', '),tags:(p.tags||[]).join(', '),stock:p.stock??100,shipCost:p.shipping?.cost||0});this.activeTab='intl';this.intlView='form'}},
+  catReset(){this.cf={name:'',emoji:'',img:'',order:99,parent:'',editKey:null,pct:0}},
+  catEdit(c){this.cf={name:c.name||'',emoji:c.emoji||'',img:c.img||'',order:c.order??99,parent:c.parent||'',editKey:c.fbKey,pct:0};window.scrollTo({top:0,behavior:'smooth'})},
+  catAddSub(c){this.catReset();this.cf.parent=c.fbKey;window.scrollTo({top:0,behavior:'smooth'})},
+  async catSave(){const f=this.cf;if(!String(f.name).trim())return this.showToast('নাম দিন','error');
+    const d={name:f.name.trim().slice(0,60),emoji:String(f.emoji||'').slice(0,8),img:f.img||'',order:Number(f.order)||99,parent:f.parent||''};
+    try{if(f.editKey)await window.$db.updateIntlCat(f.editKey,d);else await window.$db.saveIntlCat({...d,active:true,createdBy:this.userEmail});this.catReset();this.showToast(f.editKey?'আপডেট হয়েছে ✅':'ক্যাটাগরি যোগ হয়েছে ✅')}catch(e){this.showToast('সেভ ব্যর্থ — Firebase রুলস আপডেট হয়েছে কিনা দেখুন','error')}},
+  async catToggle(c,v){try{await window.$db.updateIntlCat(c.fbKey,{active:v})}catch(e){this.showToast('আপডেট ব্যর্থ','error')}},
+  async catDelete(c){const subs=this.intlCats.filter(x=>x.parent===c.fbKey);
+    if(subs.some(s=>!this.ownCat(s)))return this.showToast('এতে অ্যাডমিনের সাব-ক্যাটাগরি আছে, মোছা যাবে না','error');
+    const n=this.fbProducts.filter(p=>p.intl&&(p.intlCat===c.name||subs.some(s=>s.name===p.intlSub))).length;
+    if(!confirm(c.name+' মুছবেন?'+(subs.length?' ('+subs.length+'টি সাব-ক্যাটাগরিও মুছে যাবে)':'')+(n?' — এতে '+n+'টি পণ্য আছে!':'')))return;
+    try{for(const s of subs)await window.$db.deleteIntlCat(s.fbKey);await window.$db.deleteIntlCat(c.fbKey)}catch(e){this.showToast('মুছতে ব্যর্থ','error')}},
+  async _uploadImg(file,pre,onPct){
+    if(!/^image\//.test(file.type||''))throw new Error('শুধু ছবি বাছুন');
+    if(file.size>8*1024*1024)throw new Error('ছবি ৮MB-এর বেশি');
+    const cn=this.settings.cloudinaryCloudName,pr=this.settings.cloudinaryUploadPreset;
+    if(cn&&pr)return await this._cloudinary(file,cn,pr,onPct);
+    try{return await window.$db.uploadImage(file,'products/'+pre+'_'+Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9._]/g,'_'),onPct)}
+    catch(e){throw new Error('আপলোড ব্যর্থ — ছবির লিংক বসান')}},
+  async uploadCatImage(e){const file=e.target.files[0];if(!file)return;this.cf.pct=1;
+    try{this.cf.img=await this._uploadImg(file,'intlcat',p=>this.cf.pct=p);this.cf.pct=100;this.showToast('ছবি আপলোড সফল! ✅');setTimeout(()=>this.cf.pct=0,1000)}
+    catch(er){this.cf.pct=0;this.showToast(er.message,'error')}e.target.value=''},
   get nextProductId(){const ids=this.fbProducts.map(x=>Number(x.productId)||0);return(ids.length?Math.max(...ids):100)+1},
   catsInSection(sec){const all=this.fbCategories||[];if(!sec)return all;const own=c=>c.section===sec||c.sectionId===sec;const ok=(c,d)=>own(c)||(d<4&&c.parent&&(()=>{const pr=all.find(x=>x.name===c.parent);return pr?ok(pr,d+1):false})());return all.filter(c=>ok(c,0))},
   catsInView(){return this.catsInSection(this.up.section)},
@@ -864,11 +996,11 @@ function Vendor(){return{
       isEid:false,active:true,saving:false,saveErr:'',
       images:[],carIdx:0,
       mode:'A',dragA:false,dragB:false,dragC:false,urlInput:'',
-      imgbbKey:this.up.imgbbKey||'',showKey:false,
+      intl:false,intlCatKey:'',colors:'',tags:'',stock:100,shipCost:0,imgbbKey:this.up.imgbbKey||'',showKey:false,
       queue:[],qRunning:false,log:[],
     };
   },
-  editProduct(p){
+  _editBase(p){
     this.activeTab='upload';
     const imgs=(p.images&&p.images.length?p.images:[p.img].filter(Boolean));
     this.up={
@@ -892,7 +1024,7 @@ function Vendor(){return{
       images:imgs.map(url=>({url,status:'ok',prog:100,name:'existing'})),
       carIdx:0,
       mode:'A',dragA:false,dragB:false,dragC:false,urlInput:'',
-      imgbbKey:this.up.imgbbKey||'',showKey:false,
+      intl:false,intlCatKey:'',colors:'',tags:'',stock:100,shipCost:0,imgbbKey:this.up.imgbbKey||'',showKey:false,
       queue:[],qRunning:false,log:[],
     };
     window.scrollTo(0,0);
@@ -1035,7 +1167,8 @@ function Vendor(){return{
     this.up.saveErr='';
     if(!this.up.name.trim()){this.up.saveErr='পণ্যের নাম লিখুন!';return;}
     if(!this.up.price||this.up.price<=0){this.up.saveErr='সঠিক মূল্য দিন!';return;}
-    if(!String(this.up.cat||'').trim()){this.up.saveErr='ক্যাটাগরি বেছে নিন — নাহলে পণ্যটি কোনো ক্যাটাগরিতে দেখা যাবে না!';return;}
+    if(this.up.intl&&!this.intlPick()){this.up.saveErr='ইন্টারন্যাশনাল ক্যাটাগরি বেছে নিন!';return;}
+    if(!this.up.intl&&!String(this.up.cat||'').trim()){this.up.saveErr='ক্যাটাগরি বেছে নিন — নাহলে পণ্যটি কোনো ক্যাটাগরিতে দেখা যাবে না!';return;}
     if(this.up.images.some(i=>i.status==='uploading')){this.up.saveErr='আপলোড সম্পন্ন হওয়ার জন্য অপেক্ষা করুন।';return;}
     const skipDup=this.up.dupOk;this.up.dupOk=false;
     if(!skipDup){const d=this._findDup();if(d){this.dupModal={open:true,prod:d.p,why:d.why};return}}
@@ -1070,13 +1203,15 @@ function Vendor(){return{
       active:this.up.active,
       updatedAt:new Date().toISOString(),
     };
+    if(this.up.intl){const pk=this.intlPick(),csv=s=>String(s||'').split(',').map(x=>x.trim()).filter(Boolean);
+      Object.assign(data,{intl:true,intlCat:pk.cat,intlSub:pk.sub,cat:pk.cat,section:'',sectionId:'',colors:csv(this.up.colors),tags:csv(this.up.tags),stock:Number(this.up.stock)||0,shipping:{method:'Standard',cost:Number(this.up.shipCost)||0}});
+      ['installmentSettings','isEidCollection','gender','promoCode','promoDesc','promoDiscountPct'].forEach(k=>delete data[k]);}
     if(!this.up.editKey){data.timestamp=Date.now();data.createdAt=Date.now();data.productId=this.nextProductId;}
     this.saving=true;this.up.saving=true;
     try{
       await window.$db.saveProduct(data,this.up.editKey||null);
       this.showToast(this.up.editKey?'পণ্য আপডেট! ✅':'পণ্য সেভ! ✅','success');
-      this.resetUp();
-      this.activeTab='products';
+      {const wi=this.up.intl;this.resetUp();if(wi){this.activeTab='intl';this.intlView='list'}else this.activeTab='products'}
     }catch(e){this.up.saveErr='সেভ ব্যর্থ: '+(e.message||'')}
     this.saving=false;this.up.saving=false;
   },
